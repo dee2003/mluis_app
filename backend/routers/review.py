@@ -527,3 +527,94 @@ def submit_all_for_date(payload: dict, db: Session = Depends(get_db)):
     db.commit()
 
     return {"message": f"All items for {target_date} have been submitted successfully."}
+
+
+
+
+@router.get("/pe/dashboard", status_code=200)
+def get_pe_dashboard(db: Session = Depends(get_db)):
+    """
+    Returns all submitted dates with their foremen, timesheets, tickets, and job codes
+    for Project Engineer dashboard.
+    """
+    submissions = (
+        db.query(models.DailySubmission)
+        .filter(models.DailySubmission.status == "APPROVED")
+        .order_by(models.DailySubmission.date.desc())
+        .all()
+    )
+
+    result = []
+    for sub in submissions:
+        foreman = db.query(models.User).filter(models.User.id == sub.foreman_id).first()
+        timesheets = (
+            db.query(models.Timesheet)
+            .filter(
+                models.Timesheet.foreman_id == sub.foreman_id,
+                models.Timesheet.date == sub.date,
+                models.Timesheet.reviewed_by_supervisor == True
+            )
+            .all()
+        )
+        tickets = (
+            db.query(models.Ticket)
+            .filter(
+                cast(models.Ticket.created_at, Date) == sub.date,
+                models.Ticket.foreman_id == sub.foreman_id,
+                models.Ticket.reviewed_by_supervisor == True
+            )
+            .all()
+        )
+
+        result.append({
+            "date": sub.date,
+            "foreman_id": sub.foreman_id,
+            "foreman_name": f"{foreman.first_name} {foreman.last_name}" if foreman else "Unknown",
+            "job_code": sub.job_code,
+            "timesheet_count": len(timesheets),
+            "ticket_count": len(tickets),
+        })
+
+    return result
+
+@router.get("/pe/timesheets")
+def get_pe_timesheets(foreman_id: int, date: str, db: Session = Depends(get_db)):
+    target_date = date_type.fromisoformat(date)
+    timesheets = (
+        db.query(models.Timesheet)
+        .filter(models.Timesheet.foreman_id == foreman_id, models.Timesheet.date == target_date)
+        .all()
+    )
+    return [
+        {
+            "id": t.id,
+            "job_code": t.job_phase.job_code if t.job_phase else None,
+            # "hours_worked": t.hours,
+            "submitted_at": t.sent_date.isoformat() if t.sent_date else None,
+            "timesheet_name": t.timesheet_name,
+        }
+        for t in timesheets
+    ]
+
+# ---------------- PE Tickets ----------------
+@router.get("/pe/tickets")
+def get_pe_tickets(foreman_id: int, date: str, db: Session = Depends(get_db)):
+    target_date = date_type.fromisoformat(date)
+    tickets = (
+        db.query(models.Ticket)
+        .filter(
+            models.Ticket.foreman_id == foreman_id,
+            cast(models.Ticket.created_at, Date) == target_date
+        )
+        .all()
+    )
+    return [
+        {
+            "id": t.id,
+            # "ticket_number": t.extracted_text[:20],  # use first 20 chars of extracted text as ticket_number
+            "phase_code": t.job_phase.job_code if t.job_phase else t.phase_code,
+            "image_path": t.image_path,
+            # "created_at": t.created_at.isoformat(),
+        }
+        for t in tickets
+    ]

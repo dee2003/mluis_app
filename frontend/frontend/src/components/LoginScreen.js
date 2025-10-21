@@ -112,7 +112,7 @@ const LoginScreen = ({ onLogin, users = [] }) => {
             <div className="login-card"> 
                 <div className="company-logo">
                     <img src={companyLogo} alt="M Luis Construction Logo" />
-                    <h1>M LUIS Portal</h1>
+                    <h1>MLUIS Portal</h1>
                 </div>
                 
                 <form onSubmit={handleLogin} className="login-form">
