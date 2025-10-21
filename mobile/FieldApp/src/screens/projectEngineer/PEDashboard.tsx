@@ -113,6 +113,7 @@
 //             <Text style={styles.jobCode}>Job Code: {item.job_code || 'N/A'}</Text>
 
 //             <View style={styles.row}>
+
 //              <TouchableOpacity
 //   onPress={() =>
 //     (navigation as any).navigate('PETimesheetList', {
@@ -218,6 +219,7 @@ type ItemType = {
   date: string;
   foreman_id: number;
   foreman_name: string;
+  supervisor_name: string;
   job_code: string;
   timesheet_count: number;
   ticket_count: number;
@@ -316,7 +318,8 @@ const PEDashboard = () => {
           <View style={styles.itemContainer}>
             <View style={styles.itemHeader}>
               <Ionicons name="person-circle-outline" size={20} color={COLORS.textPrimary} />
-              <Text style={styles.foremanName}>{item.foreman_name}</Text>
+              <Text style={styles.foremanName}>{item.supervisor_name}</Text>
+
             </View>
             <Text style={styles.jobCode}>Job Code: {item.job_code || 'N/A'}</Text>
 

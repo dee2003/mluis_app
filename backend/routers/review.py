@@ -452,16 +452,23 @@ def get_status_for_date(date: str = Query(...), supervisor_id: int = Query(...),
 #     return {"message": f"All items for {target_date} have been submitted successfully."}
 
 
+from pydantic import BaseModel
 
+class SubmitDatePayload(BaseModel):
+    date: str
+    supervisor_id: int
 @router.post("/submit-all-for-date", status_code=status.HTTP_200_OK)
-def submit_all_for_date(payload: dict, db: Session = Depends(get_db)):
+def submit_all_for_date(payload: SubmitDatePayload, db: Session = Depends(get_db)):
     """
     Supervisor submits all tickets and timesheets for a given date.
     Marks items as reviewed and creates/updates DailySubmission for all foremen who sent data.
     """
-    date_str = payload.get("date")
-    if not date_str:
-        raise HTTPException(status_code=400, detail="Date is required")
+    date_str = payload.date           # <-- use attribute, not .get()
+    supervisor_id = payload.supervisor_id   # <-- use attribute, not .get()
+
+    if not date_str or not supervisor_id:
+        raise HTTPException(status_code=400, detail="Date and supervisor_id are required")
+
     target_date = date_type.fromisoformat(date_str)
 
     # 1️⃣ Mark all related timesheets as reviewed
@@ -499,7 +506,6 @@ def submit_all_for_date(payload: dict, db: Session = Depends(get_db)):
 
     # 4️⃣ Update or create DailySubmission for all foremen
     for fid in foremen_ids:
-        # Get job_code from the foreman's timesheet (first found) on the date
         timesheet = db.query(models.Timesheet).filter(
             models.Timesheet.foreman_id == fid,
             models.Timesheet.date == target_date,
@@ -513,14 +519,16 @@ def submit_all_for_date(payload: dict, db: Session = Depends(get_db)):
 
         submission = db.query(models.DailySubmission).filter_by(date=target_date, foreman_id=fid).first()
         if submission:
-            submission.status = "APPROVED"  # ✅ Valid ENUM
-            submission.job_code = job_code  # update job_code
+            submission.status = "APPROVED"
+            submission.job_code = job_code
+            submission.supervisor_id = supervisor_id   # <-- works now
         else:
             new_sub = models.DailySubmission(
                 date=target_date,
                 foreman_id=fid,
-                job_code=job_code,  # save job_code here
-                status="APPROVED"
+                job_code=job_code,
+                status="APPROVED",
+                supervisor_id=supervisor_id            # <-- works now
             )
             db.add(new_sub)
 
@@ -529,12 +537,10 @@ def submit_all_for_date(payload: dict, db: Session = Depends(get_db)):
     return {"message": f"All items for {target_date} have been submitted successfully."}
 
 
-
-
 @router.get("/pe/dashboard", status_code=200)
 def get_pe_dashboard(db: Session = Depends(get_db)):
     """
-    Returns all submitted dates with their foremen, timesheets, tickets, and job codes
+    Returns all submitted dates with their supervisors, timesheets, tickets, and job codes
     for Project Engineer dashboard.
     """
     submissions = (
@@ -546,7 +552,13 @@ def get_pe_dashboard(db: Session = Depends(get_db)):
 
     result = []
     for sub in submissions:
-        foreman = db.query(models.User).filter(models.User.id == sub.foreman_id).first()
+        # 🔹 Fetch supervisor instead of foreman
+        supervisor = (
+            db.query(models.User)
+            .filter(models.User.id == sub.supervisor_id)
+            .first()
+        )
+
         timesheets = (
             db.query(models.Timesheet)
             .filter(
@@ -569,13 +581,15 @@ def get_pe_dashboard(db: Session = Depends(get_db)):
         result.append({
             "date": sub.date,
             "foreman_id": sub.foreman_id,
-            "foreman_name": f"{foreman.first_name} {foreman.last_name}" if foreman else "Unknown",
+            # 🔹 Replace foreman_name with supervisor_name
+            "supervisor_name": f"{supervisor.first_name} {supervisor.last_name}" if supervisor else "Unknown",
             "job_code": sub.job_code,
             "timesheet_count": len(timesheets),
             "ticket_count": len(tickets),
         })
 
     return result
+
 
 @router.get("/pe/timesheets")
 def get_pe_timesheets(foreman_id: int, date: str, db: Session = Depends(get_db)):
